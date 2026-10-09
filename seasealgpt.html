@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 卡通海豹 - 游动动画</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: linear-gradient(180deg, #0a192f 0%, #1a3a5c 100%); }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+
+    // ========== 1. 场景、相机、渲染器 ==========
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0a192f, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(4, 3, 6);
+    camera.lookAt(0, 0.5, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 0.5, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.8; // 减慢相机自动旋转，方便观察游动
+    controls.maxPolarAngle = Math.PI / 2;
+
+    // ========== 2. 灯光 ==========
+    const ambientLight = new THREE.AmbientLight(0x446688, 1.5);
+    scene.add(ambientLight);
+
+    const mainLight = new THREE.DirectionalLight(0xcceeff, 2.5);
+    mainLight.position.set(5, 8, 5);
+    mainLight.castShadow = true;
+    mainLight.shadow.mapSize.width = 1024;
+    mainLight.shadow.mapSize.height = 1024;
+    mainLight.shadow.camera.near = 1;
+    mainLight.shadow.camera.far = 20;
+    mainLight.shadow.camera.left = -5;
+    mainLight.shadow.camera.right = 5;
+    mainLight.shadow.camera.top = 5;
+    mainLight.shadow.camera.bottom = -5;
+    scene.add(mainLight);
+
+    const fillLight = new THREE.PointLight(0x88bbdd, 0.8);
+    fillLight.position.set(-2, -1, 2);
+    scene.add(fillLight);
+
+    // ========== 3. 构建卡通海豹 ==========
+    const sealGroup = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8cb4d4, roughness: 0.55, metalness: 0.1 });
+    const bellyMat = new THREE.MeshStandardMaterial({ color: 0xe8f0f8, roughness: 0.7, metalness: 0.05 });
+    const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    const eyeBlackMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.2 });
+    const noseMat = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, roughness: 0.8 });
+    const cheekMat = new THREE.MeshStandardMaterial({ color: 0xffaacc, roughness: 0.9, transparent: true, opacity: 0.6 });
+
+    // 身体
+    const bodyGeom = new THREE.SphereGeometry(1, 64, 64);
+    const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.scale.set(1.0, 0.85, 1.3);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    sealGroup.add(body);
+
+    // 腹部
+    const bellyGeom = new THREE.SphereGeometry(0.82, 24, 18);
+    const belly = new THREE.Mesh(bellyGeom, bellyMat);
+    belly.scale.set(0.95, 0.75, 1.15);
+    belly.position.set(0, -0.12, 0.1);
+    belly.castShadow = true;
+    belly.receiveShadow = true;
+    sealGroup.add(belly);
+
+    // 头部
+    const headGeom = new THREE.SphereGeometry(0.68, 32, 24);
+    const head = new THREE.Mesh(headGeom, bodyMat);
+    head.scale.set(0.95, 0.9, 0.95);
+    head.position.set(0, 0.45, 0.85);
+    head.castShadow = true;
+    head.receiveShadow = true;
+    sealGroup.add(head);
+
+    // 口鼻部
+    const snoutGeom = new THREE.SphereGeometry(0.38, 24, 18);
+    const snout = new THREE.Mesh(snoutGeom, bellyMat);
+    snout.scale.set(0.9, 0.7, 1.0);
+    snout.position.set(0, 0.3, 1.25);
+    snout.castShadow = true;
+    snout.receiveShadow = true;
+    sealGroup.add(snout);
+
+    // 鼻子
+    const noseGeom = new THREE.SphereGeometry(0.1, 16, 12);
+    const nose = new THREE.Mesh(noseGeom, noseMat);
+    nose.scale.set(1.1, 0.8, 0.9);
+    nose.position.set(0, 0.38, 1.58);
+    nose.castShadow = true;
+    sealGroup.add(nose);
+
+    // 眼睛（高光改为贴合瞳孔的压扁球体）
+    function createEye(x, y, z) {
+        const eyeGroup = new THREE.Group();
+        const whiteGeom = new THREE.SphereGeometry(0.17, 20, 16);
+        const white = new THREE.Mesh(whiteGeom, eyeWhiteMat);
+        white.scale.set(1, 1.1, 0.6);
+        white.castShadow = true;
+        eyeGroup.add(white);
+
+        const pupilGeom = new THREE.SphereGeometry(0.1, 16, 12);
+        const pupil = new THREE.Mesh(pupilGeom, eyeBlackMat);
+        pupil.position.set(0, 0.02, 0.12);
+        pupil.scale.set(1, 1.15, 0.5);
+        pupil.castShadow = true;
+        eyeGroup.add(pupil);
+
+        // 高光：压扁的小球体，嵌入瞳孔表面（经椭球计算 z≈0.155 处正好贴合）
+        const highlightGeom = new THREE.SphereGeometry(0.035, 16, 16);
+        const highlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const highlight = new THREE.Mesh(highlightGeom, highlightMat);
+        highlight.scale.set(1, 1, 0.25);        // 沿 Z 轴压扁，像贴在瞳孔上的小圆片
+        highlight.position.set(-0.03, 0.05, 0.155); // 精确嵌入瞳孔曲面
+        eyeGroup.add(highlight);
+
+        eyeGroup.position.set(x, y, z);
+        eyeGroup.rotation.y = x > 0 ? 0.35 : -0.35;
+        return eyeGroup;
+    }
+
+    sealGroup.add(createEye(-0.32, 0.55, 1.25));
+    sealGroup.add(createEye(0.32, 0.55, 1.25));
+
+    // 腮红
+    function createCheek(x, y, z) {
+        const cheekGeom = new THREE.SphereGeometry(0.16, 16, 12);
+        const cheek = new THREE.Mesh(cheekGeom, cheekMat);
+        cheek.scale.set(1, 0.6, 0.3);
+        cheek.position.set(x, y, z);
+        return cheek;
+    }
+    sealGroup.add(createCheek(-0.52, 0.42, 1.18));
+    sealGroup.add(createCheek(0.52, 0.42, 1.18));
+
+    // 前鳍（保存引用，方便动画）
+    function createFrontFlipper(side) {
+        const flipperGeom = new THREE.SphereGeometry(0.35, 20, 14);
+        const flipper = new THREE.Mesh(flipperGeom, bodyMat);
+        flipper.scale.set(0.25, 0.7, 1.0);
+        flipper.position.set(side * 0.95, -0.1, 0.6);
+        flipper.rotation.z = side * 0.5;
+        flipper.rotation.x = -0.3;
+        flipper.castShadow = true;
+        flipper.receiveShadow = true;
+        return flipper;
+    }
+    const frontLeftFlipper = createFrontFlipper(-1);
+    const frontRightFlipper = createFrontFlipper(1);
+    sealGroup.add(frontLeftFlipper);
+    sealGroup.add(frontRightFlipper);
+
+    // 后鳍（保存引用）
+    function createRearFlipper(side) {
+        const flipperGeom = new THREE.SphereGeometry(0.4, 20, 14);
+        const flipper = new THREE.Mesh(flipperGeom, bodyMat);
+        flipper.scale.set(0.7, 0.15, 0.9);
+        flipper.position.set(side * 0.35, -0.15, -1.25);
+        flipper.rotation.z = side * 0.7;
+        flipper.rotation.x = 0.4;
+        flipper.castShadow = true;
+        flipper.receiveShadow = true;
+        return flipper;
+    }
+    const rearLeftFlipper = createRearFlipper(-1);
+    const rearRightFlipper = createRearFlipper(1);
+    sealGroup.add(rearLeftFlipper);
+    sealGroup.add(rearRightFlipper);
+
+    // 胡须
+    function addWhisker(parent, x, y, z, rotY) {
+        const whiskerGeom = new THREE.CylinderGeometry(0.008, 0.012, 0.6, 6);
+        const whiskerMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.5 });
+        const whisker = new THREE.Mesh(whiskerGeom, whiskerMat);
+        whisker.position.set(x, y, z);
+        whisker.rotation.z = Math.PI / 2 + (x > 0 ? -0.3 : 0.3);
+        whisker.rotation.y = rotY;
+        parent.add(whisker);
+    }
+    addWhisker(sealGroup, -0.28, 0.32, 1.45, 0.2);
+    addWhisker(sealGroup, -0.22, 0.22, 1.5, 0.15);
+    addWhisker(sealGroup, 0.28, 0.32, 1.45, -0.2);
+    addWhisker(sealGroup, 0.22, 0.22, 1.5, -0.15);
+
+    // ========== 4. 制作 GPT Logo 贴图 ==========
+    const GPT_PATH = "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z";
+    const SIZE = 1024;
+    const cvs = document.createElement('canvas');
+    cvs.width = cvs.height = SIZE;
+    const ctx = cvs.getContext('2d');
+    ctx.scale(SIZE / 24, SIZE / 24);
+    ctx.fillStyle = '#10a37f';
+    ctx.fill(new Path2D(GPT_PATH));
+
+    const gptTexture = new THREE.CanvasTexture(cvs);
+    gptTexture.colorSpace = THREE.SRGBColorSpace;
+    gptTexture.anisotropy = 8;
+
+    // ========== 5. DecalGeometry 将 Logo 贴合到背部 ==========
+    sealGroup.updateMatrixWorld(true);
+
+    const decalPosition = new THREE.Vector3(0, 0.9, -0.4);
+    const decalOrientation = new THREE.Euler(Math.PI / 2, 0, 0);
+    const decalSize = new THREE.Vector3(1.25, 1.25, 1.25);
+
+    const decalGeom = new DecalGeometry(body, decalPosition, decalOrientation, decalSize);
+
+    const decalMat = new THREE.MeshStandardMaterial({
+        map: gptTexture,
+        transparent: true,
+        depthTest: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+    });
+
+    const decalMesh = new THREE.Mesh(decalGeom, decalMat);
+    sealGroup.add(decalMesh);
+
+    // 海豹整体基础姿态
+    const baseRotationY = -0.3;
+    const basePositionY = 0.5;
+    sealGroup.rotation.y = baseRotationY;
+    sealGroup.position.y = basePositionY;
+    scene.add(sealGroup);
+
+    // ========== 6. 环境装饰 ==========
+    const bubbles = [];
+    const bubbleMat = new THREE.MeshStandardMaterial({
+        color: 0xaaddff,
+        transparent: true,
+        opacity: 0.25,
+        roughness: 0.1,
+        metalness: 0.2,
+        emissive: 0x224466,
+        emissiveIntensity: 0.3
+    });
+
+    for (let i = 0; i < 40; i++) {
+        const size = Math.random() * 0.12 + 0.04;
+        const bubbleGeom = new THREE.SphereGeometry(size, 8, 8);
+        const bubble = new THREE.Mesh(bubbleGeom, bubbleMat);
+        bubble.position.set(
+            (Math.random() - 0.5) * 12,
+            Math.random() * 8 - 2,
+            (Math.random() - 0.5) * 12 - 2
+        );
+        bubble.userData = {
+            speed: Math.random() * 0.01 + 0.005,
+            wobble: Math.random() * Math.PI * 2,
+            wobbleSpeed: Math.random() * 0.02 + 0.01
+        };
+        scene.add(bubble);
+        bubbles.push(bubble);
+    }
+
+    const floorGlowGeom = new THREE.PlaneGeometry(20, 20);
+    const floorGlowMat = new THREE.MeshStandardMaterial({
+        color: 0x1a3a5c,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.DoubleSide,
+        emissive: 0x0a192f,
+        emissiveIntensity: 0.5
+    });
+    const floorGlow = new THREE.Mesh(floorGlowGeom, floorGlowMat);
+    floorGlow.rotation.x = -Math.PI / 2;
+    floorGlow.position.y = -2.5;
+    scene.add(floorGlow);
+
+    // ========== 7. 动画循环 ==========
+    const clock = new THREE.Clock();
+
+    function animate() {
+        const delta = clock.getDelta();
+        const t = performance.now() * 0.001;
+
+        // ---------- 流畅的游动动画 ----------
+        // 上下起伏（像真的在浮沉）
+        sealGroup.position.y = basePositionY + Math.sin(t * 1.3) * 0.18;
+        // 左右轻微漂移（8 字形轨迹）
+        sealGroup.position.x = Math.sin(t * 0.6) * 0.35;
+        // 前后轻微漂移
+        sealGroup.position.z = Math.cos(t * 0.5) * 0.25;
+
+        // 左右滚转（像扭动身体在游泳）
+        sealGroup.rotation.z = Math.sin(t * 0.9) * 0.1;
+        // 抬头 / 低头（俯仰）
+        sealGroup.rotation.x = Math.sin(t * 1.6) * 0.07;
+        // 偏航转向（左右摆头）
+        sealGroup.rotation.y = baseRotationY + Math.sin(t * 0.7) * 0.28;
+
+        // ---------- 鳍肢摆动 ----------
+        // 前鳍：划水动作（绕 Z 轴摆动 + 绕 X 轴划水弧度）
+        frontLeftFlipper.rotation.z = -0.5 + Math.sin(t * 2.4) * 0.4;
+        frontRightFlipper.rotation.z = 0.5 + Math.sin(t * 2.4 + 0.6) * 0.4;
+        frontLeftFlipper.rotation.x = -0.3 + Math.sin(t * 2.4 + 0.4) * 0.25;
+        frontRightFlipper.rotation.x = -0.3 + Math.sin(t * 2.4 + 1.0) * 0.25;
+
+        // 后鳍：像尾鳍一样上下拍打
+        rearLeftFlipper.rotation.x = 0.4 + Math.sin(t * 2.0) * 0.4;
+        rearRightFlipper.rotation.x = 0.4 + Math.sin(t * 2.0 + 0.4) * 0.4;
+        rearLeftFlipper.rotation.z = -0.7 + Math.sin(t * 2.0 + 0.2) * 0.2;
+        rearRightFlipper.rotation.z = 0.7 + Math.sin(t * 2.0 + 0.5) * 0.2;
+
+        // ---------- 气泡上升 ----------
+        bubbles.forEach(bubble => {
+            bubble.position.y += bubble.userData.speed;
+            bubble.position.x += Math.sin(t * bubble.userData.wobbleSpeed + bubble.userData.wobble) * 0.003;
+            if (bubble.position.y > 6) {
+                bubble.position.y = -2;
+                bubble.position.x = (Math.random() - 0.5) * 12;
+                bubble.position.z = (Math.random() - 0.5) * 12 - 2;
+            }
+        });
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    // ========== 8. 窗口大小自适应 ==========
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
